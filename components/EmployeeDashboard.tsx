@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSettings } from '../context/SettingsContext';
 import { supabase } from '../lib/supabase';
@@ -15,8 +13,9 @@ interface EmployeeDashboardProps {
     dataVersion: number;
     onOpenNoteModal: (date: Date, note: DailyNote | null, ownerId: string) => void;
     onManageEntries: () => void;
-    onAddEntry?: () => void; // New prop for admin to add entry directly
-    historyStatus?: 'active' | 'recent' | 'none'; // Shared status from App.tsx
+    onAddEntry?: () => void;
+    historyStatus?: 'active' | 'recent' | 'none';
+    targetUserId?: string; // New: allow admin to specify which user to view
 }
 
 const calculateHours = (startISO: string, endISO: string | null) => {
@@ -28,7 +27,16 @@ const calculateHours = (startISO: string, endISO: string | null) => {
     return durationMs / (1000 * 60 * 60);
 };
 
-const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, profile, dataVersion, onOpenNoteModal, onManageEntries, onAddEntry, historyStatus = 'none' }) => {
+const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ 
+    session, 
+    profile, 
+    dataVersion, 
+    onOpenNoteModal, 
+    onManageEntries, 
+    onAddEntry, 
+    historyStatus = 'none',
+    targetUserId 
+}) => {
     const [calendarDate, setCalendarDate] = useState(new Date());
     const [summaryRange, setSummaryRange] = useState<{ start: Date, end: Date }>({ 
         start: new Date(new Date().getFullYear(), new Date().getMonth(), 1), 
@@ -41,6 +49,9 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, profile,
     
     const timeZone = 'Asia/Ho_Chi_Minh';
     const ymdFormatter = useMemo(() => new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone }), [timeZone]);
+
+    // Use targetUserId if provided (admin view), otherwise fallback to session user
+    const effectiveUserId = targetUserId || session?.user.id;
 
     const fetchData = useCallback(async (user_id: string, start: Date, end: Date) => {
         setLoading(true);
@@ -60,9 +71,9 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, profile,
     }, [ymdFormatter]);
     
      useEffect(() => {
-        if (session) fetchData(session.user.id, summaryRange.start, summaryRange.end);
+        if (effectiveUserId) fetchData(effectiveUserId, summaryRange.start, summaryRange.end);
         else { setTimeEntries([]); setDailyNotes([]); setLoading(false); }
-    }, [session, summaryRange, fetchData, dataVersion]);
+    }, [effectiveUserId, summaryRange, fetchData, dataVersion]);
 
     const onRangeUpdate = useCallback(({start, end}: {start: Date, end: Date}) => {
         setSummaryRange({start, end});
@@ -74,7 +85,6 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, profile,
 
     return (
         <div className="w-full animate-fadeInUp">
-            {/* Added z-50 and relative here to fix dropdown layering */}
             <div className="relative z-50 flex flex-col md:flex-row justify-between items-center mb-6 gap-3 bg-white/40 dark:bg-gray-800/20 p-3 rounded-2xl border border-black/5 dark:border-white/5 backdrop-blur-sm">
                 <div className="w-full md:w-auto flex-grow flex items-center gap-2">
                     <div className="w-full md:w-44">
@@ -85,23 +95,23 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, profile,
                         />
                     </div>
                     
-                    {/* Mobile-only History Button (Icon only) */}
-                    <button
-                        onClick={onManageEntries}
-                        className="md:hidden relative flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-r from-[var(--gradient-from)] to-[var(--gradient-to)] text-white shadow-lg transition-transform active:scale-90"
-                    >
-                        <ClipboardListIcon size={18} />
-                        {historyStatus !== 'none' && (
-                            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
-                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${historyStatus === 'active' ? 'bg-rose-400' : 'bg-orange-400'}`}></span>
-                                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 border border-white dark:border-gray-800 ${historyStatus === 'active' ? 'bg-rose-500' : 'bg-orange-500'}`}></span>
-                            </span>
-                        )}
-                    </button>
+                    {!targetUserId && (
+                        <button
+                            onClick={onManageEntries}
+                            className="md:hidden relative flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-r from-[var(--gradient-from)] to-[var(--gradient-to)] text-white shadow-lg transition-transform active:scale-90"
+                        >
+                            <ClipboardListIcon size={18} />
+                            {historyStatus !== 'none' && (
+                                <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${historyStatus === 'active' ? 'bg-rose-400' : 'bg-orange-400'}`}></span>
+                                    <span className={`relative inline-flex rounded-full h-2.5 w-2.5 border border-white dark:border-gray-900 ${historyStatus === 'active' ? 'bg-rose-500' : 'bg-orange-500'}`}></span>
+                                </span>
+                            )}
+                        </button>
+                    )}
                 </div>
                 
                 <div className="flex w-full md:w-auto gap-2">
-                    {/* Admin Add Shift Button */}
                     {profile?.role === 'admin' && onAddEntry && (
                         <button
                             onClick={onAddEntry}
@@ -112,21 +122,22 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, profile,
                         </button>
                     )}
 
-                    {/* Desktop History Button (Text + Icon) */}
-                    <button
-                        onClick={onManageEntries}
-                        className="hidden md:flex relative flex-1 md:flex-none items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold rounded-xl hover:scale-[1.02] active:scale-95 transition-all bg-gradient-to-r from-[var(--gradient-from)] to-[var(--gradient-to)] text-white shadow-lg"
-                    >
-                        <ClipboardListIcon size={18} />
-                        <span>Lịch sử ca làm việc</span>
-                        
-                        {historyStatus !== 'none' && (
-                            <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${historyStatus === 'active' ? 'bg-rose-400' : 'bg-orange-400'}`}></span>
-                                <span className={`relative inline-flex rounded-full h-3 w-3 border-2 border-white dark:border-gray-800 ${historyStatus === 'active' ? 'bg-rose-500' : 'bg-orange-500'}`}></span>
-                            </span>
-                        )}
-                    </button>
+                    {!targetUserId && (
+                        <button
+                            onClick={onManageEntries}
+                            className="hidden md:flex relative flex-1 md:flex-none items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold rounded-xl hover:scale-[1.02] active:scale-95 transition-all bg-gradient-to-r from-[var(--gradient-from)] to-[var(--gradient-to)] text-white shadow-lg"
+                        >
+                            <ClipboardListIcon size={18} />
+                            <span>Lịch sử ca làm việc</span>
+                            
+                            {historyStatus !== 'none' && (
+                                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${historyStatus === 'active' ? 'bg-rose-400' : 'bg-orange-400'}`}></span>
+                                    <span className={`relative inline-flex rounded-full h-3 w-3 border-2 border-white dark:border-gray-900 ${historyStatus === 'active' ? 'bg-rose-500' : 'bg-orange-500'}`}></span>
+                                </span>
+                            )}
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -139,7 +150,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, profile,
             <div className="bg-white/80 dark:bg-gray-800/40 backdrop-blur-sm rounded-2xl shadow-sm p-4 border border-black/5 dark:border-white/5">
                 <CalendarGrid 
                     currentDate={calendarDate} entries={timeEntries} notes={dailyNotes} loading={loading}
-                    onOpenNoteModal={(date, note) => onOpenNoteModal(date, note, session!.user.id)}
+                    onOpenNoteModal={(date, note) => onOpenNoteModal(date, note, effectiveUserId!)}
                     ymdFormatter={ymdFormatter} 
                 />
             </div>

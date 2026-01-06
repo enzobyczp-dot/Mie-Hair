@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useSettings } from '../context/SettingsContext';
@@ -8,11 +6,13 @@ import {
     EditIcon, ClockIcon, SearchIcon, UsersIcon,
     CalendarIcon, ClipboardListIcon,
     DollarSignIcon, BriefcaseIcon,
-    CheckIcon, ArrowUpDownIcon, RadioIcon
+    CheckIcon, ArrowUpDownIcon, RadioIcon,
+    ChevronLeftIcon
 } from './Icons';
 import EditEmployeeModal from './EditEmployeeModal';
 import { SummaryHeader } from './SummaryHeader';
 import CustomDropdown from './CustomDropdown';
+import EmployeeDashboard from './EmployeeDashboard';
 
 interface AdminDashboardProps {
     onOpenNoteModal: (date: Date, note: DailyNote | null, ownerId: string, readOnly?: boolean) => void;
@@ -37,6 +37,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
     const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [employeeToEdit, setEmployeeToEdit] = useState<Profile | null>(null);
+    
+    // Drill-down state
+    const [selectedEmployee, setSelectedEmployee] = useState<Profile | null>(null);
     
     const [searchTerm, setSearchTerm] = useState('');
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'revenue', direction: 'desc' });
@@ -67,11 +70,44 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
         icon: e.avatar_url ? <img src={e.avatar_url} className="w-4 h-4 rounded-full object-cover" /> : null
     })), [employees]);
 
+    if (selectedEmployee) {
+        return (
+            <div className="w-full space-y-4 animate-fadeIn">
+                <div className="flex items-center gap-4 mb-4">
+                    <button 
+                        onClick={() => setSelectedEmployee(null)}
+                        className="p-2 rounded-xl bg-white dark:bg-gray-800 border border-black/5 dark:border-white/5 text-gray-500 hover:text-[var(--accent-color)] transition-all shadow-sm"
+                        title="Quay lại danh sách"
+                    >
+                        <ChevronLeftIcon size={20} />
+                    </button>
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                             <div className="relative">
+                                {selectedEmployee.avatar_url ? <img src={selectedEmployee.avatar_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs font-bold">{selectedEmployee.full_name.charAt(0)}</div>}
+                             </div>
+                             Hiệu Suất: {selectedEmployee.full_name}
+                        </h2>
+                        <p className="text-xs text-gray-500">Chế độ xem quản lý cho nhân viên này</p>
+                    </div>
+                </div>
+                
+                <EmployeeDashboard 
+                    session={null} 
+                    profile={selectedEmployee} 
+                    dataVersion={dataVersion} 
+                    onOpenNoteModal={onOpenNoteModal} 
+                    onManageEntries={onManageEntries} 
+                    targetUserId={selectedEmployee.id}
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="w-full space-y-4">
             <div className="bg-white/80 dark:bg-gray-800/40 backdrop-blur-sm p-4 rounded-2xl border border-black/5 dark:border-white/5 shadow-sm animate-fadeIn relative z-40">
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 items-end">
-                    {/* Search Input */}
                     <div className="col-span-2 md:col-span-2 lg:col-span-3">
                         <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
@@ -87,7 +123,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
                         </div>
                     </div>
                     
-                    {/* Time Filter */}
                     <SummaryHeader 
                         onRangeUpdate={setSummaryRange} 
                         onCustomMonthChange={setCalendarDate} 
@@ -96,7 +131,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
                         className="w-full"
                     />
 
-                    {/* Employee Filter */}
                     <CustomDropdown 
                         options={employeeOptions}
                         selectedIds={selectedEmployeeIds}
@@ -119,6 +153,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
                     selectedEmployeeIds={selectedEmployeeIds}
                     toggleSort={toggleSort}
                     dataVersion={dataVersion}
+                    onEmployeeClick={(emp) => setSelectedEmployee(emp)}
                 />
             </div>
 
@@ -149,9 +184,10 @@ interface OverallViewProps {
     selectedEmployeeIds: string[];
     toggleSort: (key: SortKey) => void;
     dataVersion: number;
+    onEmployeeClick: (emp: Profile) => void;
 }
 
-const OverallView: React.FC<OverallViewProps> = ({ employees, range, searchTerm, sortConfig, selectedEmployeeIds, toggleSort, dataVersion }) => {
+const OverallView: React.FC<OverallViewProps> = ({ employees, range, searchTerm, sortConfig, selectedEmployeeIds, toggleSort, dataVersion, onEmployeeClick }) => {
     const { t } = useSettings();
     const [allEntries, setAllEntries] = useState<TimeEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -195,7 +231,6 @@ const OverallView: React.FC<OverallViewProps> = ({ employees, range, searchTerm,
                 let aVal: any = sortConfig.key === 'name' ? a.name : a[sortConfig.key as keyof typeof a];
                 let bVal: any = sortConfig.key === 'name' ? b.name : b[sortConfig.key as keyof typeof b];
 
-                // Handle string comparison for 'name' and numeric for others
                 if (typeof aVal === 'string' && typeof bVal === 'string') {
                     return sortConfig.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
                 } else {
@@ -206,7 +241,6 @@ const OverallView: React.FC<OverallViewProps> = ({ employees, range, searchTerm,
 
     return (
         <div className="space-y-4 animate-fadeIn">
-            {/* Sắp xếp lại thứ tự: Nhân Viên, Giờ Làm, Doanh Số, Tổng Ca */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
                 <StatCard icon={<BriefcaseIcon size={18} className="text-green-500" />} label="Nhân viên" value={employeeStats.length} color="text-green-500" />
                 <StatCard icon={<ClockIcon size={18} className="text-amber-500" />} label="Giờ làm" value={employeeStats.reduce((s, e) => s + e.hours, 0).toFixed(1) + 'h'} color="text-amber-500" />
@@ -229,14 +263,21 @@ const OverallView: React.FC<OverallViewProps> = ({ employees, range, searchTerm,
                             {loading ? (
                                 <tr><td colSpan={4} className="p-10 text-center"><div className="w-6 h-6 border-2 border-[var(--accent-color)] border-t-transparent rounded-full animate-spin mx-auto" /></td></tr>
                             ) : employeeStats.map(({profile, hours, shifts, revenue, isLive}) => (
-                                <tr key={profile.id} className="hover:bg-[var(--accent-color)]/5 transition-all">
+                                <tr 
+                                    key={profile.id} 
+                                    className="hover:bg-[var(--accent-color)]/5 transition-all cursor-pointer group"
+                                    onClick={() => onEmployeeClick(profile)}
+                                >
                                     <td className="p-3 font-normal text-gray-800 dark:text-gray-200">
                                         <div className="flex items-center gap-3">
                                             <div className="relative">
                                                 {profile.avatar_url ? <img src={profile.avatar_url} className="w-9 h-9 rounded-full object-cover border border-black/5" /> : <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs font-bold">{(profile.full_name || '?').charAt(0)}</div>}
                                                 {isLive && <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 border border-white dark:border-slate-800" /></span>}
                                             </div>
-                                            <div className="flex flex-col"><span className="text-sm font-bold">{profile.full_name}</span>{isLive && <div className="flex items-center gap-1 text-[9px] text-rose-500 font-bold uppercase"><RadioIcon size={10} /> Live</div>}</div>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-bold group-hover:text-[var(--accent-color)] transition-colors">{profile.full_name}</span>
+                                                {isLive && <div className="flex items-center gap-1 text-[9px] text-rose-500 font-bold uppercase"><RadioIcon size={10} /> Live</div>}
+                                            </div>
                                         </div>
                                     </td>
                                     <td className="p-3 text-center font-bold text-amber-500">{hours.toFixed(1)}h</td>

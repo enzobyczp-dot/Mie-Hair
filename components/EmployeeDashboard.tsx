@@ -3,19 +3,21 @@ import { useSettings } from '../context/SettingsContext';
 import { supabase } from '../lib/supabase';
 import type { TimeEntry, DailyNote, Profile } from '../types';
 import type { Session } from '@supabase/supabase-js';
-import { ClockIcon, BriefcaseIcon, ClipboardListIcon, PlusIcon, DocumentTextIcon, DollarSignIcon, HistoryIcon, CalendarIcon } from './Icons';
+import { ClockIcon, BriefcaseIcon, ClipboardListIcon, PlusIcon, DocumentTextIcon, DollarSignIcon, ChevronLeftIcon, CalendarIcon } from './Icons';
 import { SummaryHeader } from './SummaryHeader';
 import MonthlyChart from './MonthlyChart';
 
 interface EmployeeDashboardProps {
     session: Session | null;
     profile: Profile | null;
+    userId?: string; // Optional: Override current user ID (for admin view)
+    targetProfile?: Profile | null; // Optional: Override current profile (for admin view)
+    onBack?: () => void; // Optional: Callback to go back to employee list
     dataVersion: number;
     onOpenNoteModal: (date: Date, note: DailyNote | null, ownerId: string) => void;
     onManageEntries: () => void;
     onAddEntry?: () => void;
     historyStatus?: 'active' | 'recent' | 'none';
-    targetUserId?: string; // New: allow admin to specify which user to view
 }
 
 const calculateHours = (startISO: string, endISO: string | null) => {
@@ -30,12 +32,14 @@ const calculateHours = (startISO: string, endISO: string | null) => {
 const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ 
     session, 
     profile, 
+    userId, 
+    targetProfile,
+    onBack,
     dataVersion, 
     onOpenNoteModal, 
     onManageEntries, 
     onAddEntry, 
-    historyStatus = 'none',
-    targetUserId 
+    historyStatus = 'none' 
 }) => {
     const [calendarDate, setCalendarDate] = useState(new Date());
     const [summaryRange, setSummaryRange] = useState<{ start: Date, end: Date }>({ 
@@ -47,13 +51,13 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     const [dailyNotes, setDailyNotes] = useState<DailyNote[]>([]);
     const [loading, setLoading] = useState(true);
     
+    const activeUserId = userId || session?.user.id;
+    const activeProfile = targetProfile || profile;
+    
     const timeZone = 'Asia/Ho_Chi_Minh';
     const ymdFormatter = useMemo(() => new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone }), [timeZone]);
 
-    // Use targetUserId if provided (admin view), otherwise fallback to session user
-    const effectiveUserId = targetUserId || session?.user.id;
-
-    const fetchData = useCallback(async (user_id: string, start: Date, end: Date) => {
+    const fetchData = useCallback(async (uid: string, start: Date, end: Date) => {
         setLoading(true);
         const startISO = start.toISOString();
         const endISO = end.toISOString();
@@ -61,8 +65,8 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         const endYMD = ymdFormatter.format(end);
 
         const [entriesResult, notesResult] = await Promise.all([
-            supabase.from('time_entries').select('*').eq('user_id', user_id).gte('start_time', startISO).lt('start_time', endISO).order('start_time', { ascending: true }),
-            supabase.from('daily_notes').select('*').eq('user_id', user_id).gte('date', startYMD).lte('date', endYMD)
+            supabase.from('time_entries').select('*').eq('user_id', uid).gte('start_time', startISO).lt('start_time', endISO).order('start_time', { ascending: true }),
+            supabase.from('daily_notes').select('*').eq('user_id', uid).gte('date', startYMD).lte('date', endYMD)
         ]);
 
         if (!entriesResult.error) setTimeEntries(entriesResult.data);
@@ -71,9 +75,9 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     }, [ymdFormatter]);
     
      useEffect(() => {
-        if (effectiveUserId) fetchData(effectiveUserId, summaryRange.start, summaryRange.end);
+        if (activeUserId) fetchData(activeUserId, summaryRange.start, summaryRange.end);
         else { setTimeEntries([]); setDailyNotes([]); setLoading(false); }
-    }, [effectiveUserId, summaryRange, fetchData, dataVersion]);
+    }, [activeUserId, summaryRange, fetchData, dataVersion]);
 
     const onRangeUpdate = useCallback(({start, end}: {start: Date, end: Date}) => {
         setSummaryRange({start, end});
@@ -83,8 +87,34 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         setCalendarDate(newDate);
     }, []);
 
+    const isAdminViewingEmployee = !!onBack;
+
     return (
         <div className="w-full animate-fadeInUp">
+            {/* Context Header for Admin View */}
+            {onBack && activeProfile && (
+                <div className="flex items-center gap-4 mb-6 animate-fadeIn">
+                    <button 
+                        onClick={onBack}
+                        className="p-2 rounded-xl bg-white dark:bg-gray-800 border border-black/5 dark:border-white/5 text-gray-500 hover:text-[var(--accent-color)] transition-all shadow-sm"
+                    >
+                        <ChevronLeftIcon size={24} />
+                    </button>
+                    <div className="flex items-center gap-3">
+                        {activeProfile.avatar_url ? (
+                            <img src={activeProfile.avatar_url} className="w-10 h-10 rounded-full object-cover border-2 border-[var(--accent-color)]" />
+                        ) : (
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--gradient-from)] to-[var(--gradient-to)] flex items-center justify-center text-white font-bold">
+                                {activeProfile.full_name?.charAt(0)}
+                            </div>
+                        )}
+                        <div>
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-white leading-tight">{activeProfile.full_name}</h2>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="relative z-50 flex flex-col md:flex-row justify-between items-center mb-6 gap-3 bg-white/40 dark:bg-gray-800/20 p-3 rounded-2xl border border-black/5 dark:border-white/5 backdrop-blur-sm">
                 <div className="w-full md:w-auto flex-grow flex items-center gap-2">
                     <div className="w-full md:w-44">
@@ -95,24 +125,23 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                         />
                     </div>
                     
-                    {!targetUserId && (
-                        <button
-                            onClick={onManageEntries}
-                            className="md:hidden relative flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-r from-[var(--gradient-from)] to-[var(--gradient-to)] text-white shadow-lg transition-transform active:scale-90"
-                        >
-                            <ClipboardListIcon size={18} />
-                            {historyStatus !== 'none' && (
-                                <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
-                                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${historyStatus === 'active' ? 'bg-rose-400' : 'bg-orange-400'}`}></span>
-                                    <span className={`relative inline-flex rounded-full h-2.5 w-2.5 border border-white dark:border-gray-900 ${historyStatus === 'active' ? 'bg-rose-500' : 'bg-orange-500'}`}></span>
-                                </span>
-                            )}
-                        </button>
-                    )}
+                    <button
+                        onClick={onManageEntries}
+                        className="md:hidden relative flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-r from-[var(--gradient-from)] to-[var(--gradient-to)] text-white shadow-lg transition-transform active:scale-90"
+                    >
+                        <ClipboardListIcon size={18} />
+                        {historyStatus !== 'none' && (
+                            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${historyStatus === 'active' ? 'bg-rose-400' : 'bg-orange-400'}`}></span>
+                                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 border border-white dark:border-gray-900 ${historyStatus === 'active' ? 'bg-rose-500' : 'bg-orange-500'}`}></span>
+                            </span>
+                        )}
+                    </button>
                 </div>
                 
                 <div className="flex w-full md:w-auto gap-2">
-                    {profile?.role === 'admin' && onAddEntry && (
+                    {/* Hide manual Add Shift button if admin is viewing a specific employee dashboard */}
+                    {!isAdminViewingEmployee && profile?.role === 'admin' && onAddEntry && (
                         <button
                             onClick={onAddEntry}
                             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl shadow-sm hover:bg-slate-50 dark:hover:bg-slate-600 transition-all tracking-wide"
@@ -122,22 +151,20 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                         </button>
                     )}
 
-                    {!targetUserId && (
-                        <button
-                            onClick={onManageEntries}
-                            className="hidden md:flex relative flex-1 md:flex-none items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold rounded-xl hover:scale-[1.02] active:scale-95 transition-all bg-gradient-to-r from-[var(--gradient-from)] to-[var(--gradient-to)] text-white shadow-lg"
-                        >
-                            <ClipboardListIcon size={18} />
-                            <span>Lịch sử ca làm việc</span>
-                            
-                            {historyStatus !== 'none' && (
-                                <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${historyStatus === 'active' ? 'bg-rose-400' : 'bg-orange-400'}`}></span>
-                                    <span className={`relative inline-flex rounded-full h-3 w-3 border-2 border-white dark:border-gray-900 ${historyStatus === 'active' ? 'bg-rose-500' : 'bg-orange-500'}`}></span>
-                                </span>
-                            )}
-                        </button>
-                    )}
+                    <button
+                        onClick={onManageEntries}
+                        className="hidden md:flex relative flex-1 md:flex-none items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold rounded-xl hover:scale-[1.02] active:scale-95 transition-all bg-gradient-to-r from-[var(--gradient-from)] to-[var(--gradient-to)] text-white shadow-lg"
+                    >
+                        <ClipboardListIcon size={18} />
+                        <span>Lịch sử ca làm việc</span>
+                        
+                        {historyStatus !== 'none' && (
+                            <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${historyStatus === 'active' ? 'bg-rose-400' : 'bg-orange-400'}`}></span>
+                                <span className={`relative inline-flex rounded-full h-3 w-3 border-2 border-white dark:border-gray-900 ${historyStatus === 'active' ? 'bg-rose-500' : 'bg-orange-500'}`}></span>
+                            </span>
+                        )}
+                    </button>
                 </div>
             </div>
 
@@ -150,7 +177,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             <div className="bg-white/80 dark:bg-gray-800/40 backdrop-blur-sm rounded-2xl shadow-sm p-4 border border-black/5 dark:border-white/5">
                 <CalendarGrid 
                     currentDate={calendarDate} entries={timeEntries} notes={dailyNotes} loading={loading}
-                    onOpenNoteModal={(date, note) => onOpenNoteModal(date, note, effectiveUserId!)}
+                    onOpenNoteModal={(date, note) => onOpenNoteModal(date, note, activeUserId!)}
                     ymdFormatter={ymdFormatter} 
                 />
             </div>
@@ -243,9 +270,9 @@ const MonthlySummary: React.FC<{ entries: TimeEntry[]; }> = ({ entries }) => {
             {statCards.map((card, index) => (
                 <div key={index} className="bg-white/80 dark:bg-gray-800/40 backdrop-blur-sm rounded-xl shadow-sm p-4 flex items-center gap-3 border border-black/5 dark:border-white/5 transition-transform hover:scale-[1.01]">
                     <div className="p-2.5 bg-gray-50 dark:bg-gray-700/30 rounded-lg flex-shrink-0">{card.icon}</div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1 overflow-hidden">
                         <p className="text-xs font-semibold text-gray-400 truncate capitalize">{card.label}</p>
-                        <p className={`text-lg font-bold truncate ${card.valueColor}`}>{card.value}</p>
+                        <p className={`text-base sm:text-lg font-bold ${card.valueColor} whitespace-normal break-words leading-tight`}>{card.value}</p>
                     </div>
                 </div>
             ))}

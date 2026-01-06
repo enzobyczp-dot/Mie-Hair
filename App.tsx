@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -30,6 +28,7 @@ const MainApp: React.FC<{ session: Session | null }> = ({ session }) => {
   const [isUserGuideOpen, setIsUserGuideOpen] = useState(false);
   const [isShiftsModalOpen, setIsShiftsModalOpen] = useState(false);
   const [isAppSettingsModalOpen, setIsAppSettingsModalOpen] = useState(false);
+  const [historyFilterUserId, setHistoryFilterUserId] = useState<string | undefined>(undefined);
   
   const [profile, setProfile] = useState<Profile | null>(null);
   const [employees, setEmployees] = useState<Profile[]>([]);
@@ -199,6 +198,11 @@ const MainApp: React.FC<{ session: Session | null }> = ({ session }) => {
   const handleOpenNoteModal = useCallback((date: Date, note: DailyNote | null, ownerId: string, readOnly: boolean = false) => {
       setSelectedDateForNote(date); setActiveNote(note); setNoteOwnerId(ownerId); setIsNoteReadOnly(readOnly); setIsNoteModalOpen(true);
   }, []);
+
+  const handleOpenShiftsModal = (userId?: string) => {
+    setHistoryFilterUserId(userId);
+    setIsShiftsModalOpen(true);
+  };
   
   const handleSignOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
@@ -216,7 +220,7 @@ const MainApp: React.FC<{ session: Session | null }> = ({ session }) => {
         <Header 
           session={session} profile={profile} handleSignOut={handleSignOut}
           onSignInClick={() => setIsAuthModalOpen(true)} onAccountClick={() => setIsAccountModalOpen(true)}
-          onTodaysShiftsClick={() => setIsShiftsModalOpen(true)}
+          onTodaysShiftsClick={() => handleOpenShiftsModal(undefined)}
           isAdminView={isAdminView} setIsAdminView={setIsAdminView}
           activeShift={activeShift} onStartShift={handleStartShift} onEndShift={handleEndShiftRequest}
           dataVersion={dataVersion}
@@ -227,10 +231,14 @@ const MainApp: React.FC<{ session: Session | null }> = ({ session }) => {
         <main className="container mx-auto px-4 pb-8 pt-44 md:pt-32 flex-grow flex flex-col">
           {isSupabaseConfigured ? (
               profile?.role === 'admin' && isAdminView ? 
-              <AdminDashboard dataVersion={dataVersion} onOpenNoteModal={handleOpenNoteModal} onManageEntries={() => setIsShiftsModalOpen(true)} /> : 
+              <AdminDashboard 
+                dataVersion={dataVersion} 
+                onOpenNoteModal={handleOpenNoteModal} 
+                onManageEntries={(uid) => handleOpenShiftsModal(uid)} 
+              /> : 
               <EmployeeDashboard 
                 session={session} profile={profile} dataVersion={dataVersion} 
-                onOpenNoteModal={handleOpenNoteModal} onManageEntries={() => setIsShiftsModalOpen(true)}
+                onOpenNoteModal={handleOpenNoteModal} onManageEntries={() => handleOpenShiftsModal(undefined)}
                 historyStatus={historyStatus} // Pass shared status to dashboard
               />
           ) : <div className="text-center p-10 bg-amber-50 rounded-xl">Supabase chưa được cấu hình</div>}
@@ -244,6 +252,7 @@ const MainApp: React.FC<{ session: Session | null }> = ({ session }) => {
                 isOpen={isShiftsModalOpen} onClose={() => setIsShiftsModalOpen(false)} 
                 employees={employees} currentUserId={session?.user.id} userRole={profile?.role}
                 onAddEntry={() => openAddEntryModal(undefined)}
+                initialSelectedUserId={historyFilterUserId}
             />
         )}
         {isTimeEntryModalOpen && <TimeEntryModal isOpen={isTimeEntryModalOpen} onClose={() => { setIsTimeEntryModalOpen(false); setEditingEntry(null); }} onSave={handleSaveEntry} entry={editingEntry as TimeEntry | null} employees={profile?.role === 'admin' ? employees : undefined} />}

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useSettings } from '../context/SettingsContext';
@@ -15,6 +14,7 @@ interface ShiftsNotificationModalProps {
     onAddEntry: () => void;
     currentUserId?: string; // New prop to identify current user
     userRole?: 'admin' | 'employee'; // New prop to determine view mode
+    initialSelectedUserId?: string; // New prop to pre-filter by user
 }
 
 const formatPreciseDuration = (startISO: string, endISO: string) => {
@@ -53,13 +53,21 @@ const ActiveTimer: React.FC<{ startISO: string }> = ({ startISO }) => {
     return <span>{elapsed}</span>;
 };
 
-const ShiftsNotificationModal: React.FC<ShiftsNotificationModalProps> = ({ isOpen, onClose, employees, onAddEntry, currentUserId, userRole }) => {
+const ShiftsNotificationModal: React.FC<ShiftsNotificationModalProps> = ({ 
+    isOpen, 
+    onClose, 
+    employees, 
+    onAddEntry, 
+    currentUserId, 
+    userRole,
+    initialSelectedUserId
+}) => {
     const { t } = useSettings();
     const [shifts, setShifts] = useState<TimeEntry[]>([]);
     const [loading, setLoading] = useState(false);
     
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+    const [selectedUserIds, setSelectedUserIds] = useState<string[]>(initialSelectedUserId ? [initialSelectedUserId] : []);
     const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
     const [timeRange, setTimeRange] = useState<string[]>(['this_month']); // Changed default to 'this_month'
 
@@ -83,12 +91,18 @@ const ShiftsNotificationModal: React.FC<ShiftsNotificationModalProps> = ({ isOpe
         confirmType: 'danger'
     });
 
-    // Auto-select current user if employee role
+    // Handle initial user selection based on userRole or prop
     useEffect(() => {
-        if (userRole === 'employee' && currentUserId) {
-            setSelectedUserIds([currentUserId]);
+        if (isOpen) {
+            if (userRole === 'employee' && currentUserId) {
+                setSelectedUserIds([currentUserId]);
+            } else if (initialSelectedUserId) {
+                setSelectedUserIds([initialSelectedUserId]);
+            } else {
+                setSelectedUserIds([]);
+            }
         }
-    }, [userRole, currentUserId]);
+    }, [isOpen, userRole, currentUserId, initialSelectedUserId]);
 
     const fetchShifts = useCallback(async () => {
         setLoading(true);

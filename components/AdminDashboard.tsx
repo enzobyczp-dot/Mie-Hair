@@ -6,8 +6,7 @@ import {
     EditIcon, ClockIcon, SearchIcon, UsersIcon,
     CalendarIcon, ClipboardListIcon,
     DollarSignIcon, BriefcaseIcon,
-    CheckIcon, ArrowUpDownIcon, RadioIcon,
-    ChevronLeftIcon
+    CheckIcon, ArrowUpDownIcon, RadioIcon
 } from './Icons';
 import EditEmployeeModal from './EditEmployeeModal';
 import { SummaryHeader } from './SummaryHeader';
@@ -16,7 +15,7 @@ import EmployeeDashboard from './EmployeeDashboard';
 
 interface AdminDashboardProps {
     onOpenNoteModal: (date: Date, note: DailyNote | null, ownerId: string, readOnly?: boolean) => void;
-    onManageEntries: () => void;
+    onManageEntries: (userId?: string) => void;
     dataVersion: number;
 }
 
@@ -38,8 +37,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [employeeToEdit, setEmployeeToEdit] = useState<Profile | null>(null);
     
-    // Drill-down state
-    const [selectedEmployee, setSelectedEmployee] = useState<Profile | null>(null);
+    // View state
+    const [selectedViewEmployee, setSelectedViewEmployee] = useState<Profile | null>(null);
     
     const [searchTerm, setSearchTerm] = useState('');
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'revenue', direction: 'desc' });
@@ -70,37 +69,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
         icon: e.avatar_url ? <img src={e.avatar_url} className="w-4 h-4 rounded-full object-cover" /> : null
     })), [employees]);
 
-    if (selectedEmployee) {
+    if (selectedViewEmployee) {
         return (
-            <div className="w-full space-y-4 animate-fadeIn">
-                <div className="flex items-center gap-4 mb-4">
-                    <button 
-                        onClick={() => setSelectedEmployee(null)}
-                        className="p-2 rounded-xl bg-white dark:bg-gray-800 border border-black/5 dark:border-white/5 text-gray-500 hover:text-[var(--accent-color)] transition-all shadow-sm"
-                        title="Quay lại danh sách"
-                    >
-                        <ChevronLeftIcon size={20} />
-                    </button>
-                    <div>
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                             <div className="relative">
-                                {selectedEmployee.avatar_url ? <img src={selectedEmployee.avatar_url} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs font-bold">{selectedEmployee.full_name.charAt(0)}</div>}
-                             </div>
-                             Hiệu Suất: {selectedEmployee.full_name}
-                        </h2>
-                        <p className="text-xs text-gray-500">Chế độ xem quản lý cho nhân viên này</p>
-                    </div>
-                </div>
-                
-                <EmployeeDashboard 
-                    session={null} 
-                    profile={selectedEmployee} 
-                    dataVersion={dataVersion} 
-                    onOpenNoteModal={onOpenNoteModal} 
-                    onManageEntries={onManageEntries} 
-                    targetUserId={selectedEmployee.id}
-                />
-            </div>
+            <EmployeeDashboard 
+                session={null} // Passing null session as we use userId override
+                profile={{ role: 'admin' } as Profile} // Explicitly set role for dashboard buttons
+                userId={selectedViewEmployee.id}
+                targetProfile={selectedViewEmployee}
+                onBack={() => setSelectedViewEmployee(null)}
+                dataVersion={dataVersion}
+                onOpenNoteModal={onOpenNoteModal}
+                onManageEntries={() => onManageEntries(selectedViewEmployee.id)}
+                onAddEntry={undefined} // Hide add entry button in admin view of employee
+            />
         );
     }
 
@@ -108,6 +89,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
         <div className="w-full space-y-4">
             <div className="bg-white/80 dark:bg-gray-800/40 backdrop-blur-sm p-4 rounded-2xl border border-black/5 dark:border-white/5 shadow-sm animate-fadeIn relative z-40">
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 items-end">
+                    {/* Search Input */}
                     <div className="col-span-2 md:col-span-2 lg:col-span-3">
                         <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
@@ -123,6 +105,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
                         </div>
                     </div>
                     
+                    {/* Time Filter */}
                     <SummaryHeader 
                         onRangeUpdate={setSummaryRange} 
                         onCustomMonthChange={setCalendarDate} 
@@ -131,6 +114,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
                         className="w-full"
                     />
 
+                    {/* Employee Filter */}
                     <CustomDropdown 
                         options={employeeOptions}
                         selectedIds={selectedEmployeeIds}
@@ -153,7 +137,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
                     selectedEmployeeIds={selectedEmployeeIds}
                     toggleSort={toggleSort}
                     dataVersion={dataVersion}
-                    onEmployeeClick={(emp) => setSelectedEmployee(emp)}
+                    onEmployeeClick={(emp) => setSelectedViewEmployee(emp)}
                 />
             </div>
 
@@ -187,7 +171,16 @@ interface OverallViewProps {
     onEmployeeClick: (emp: Profile) => void;
 }
 
-const OverallView: React.FC<OverallViewProps> = ({ employees, range, searchTerm, sortConfig, selectedEmployeeIds, toggleSort, dataVersion, onEmployeeClick }) => {
+const OverallView: React.FC<OverallViewProps> = ({ 
+    employees, 
+    range, 
+    searchTerm, 
+    sortConfig, 
+    selectedEmployeeIds, 
+    toggleSort, 
+    dataVersion,
+    onEmployeeClick 
+}) => {
     const { t } = useSettings();
     const [allEntries, setAllEntries] = useState<TimeEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -295,10 +288,10 @@ const OverallView: React.FC<OverallViewProps> = ({ employees, range, searchTerm,
 
 const StatCard: React.FC<{ icon: React.ReactNode, label: string, value: string | number, color: string }> = ({ icon, label, value, color }) => (
     <div className="bg-white/80 dark:bg-gray-800/40 backdrop-blur-sm rounded-xl shadow-sm p-4 flex items-center gap-3 border border-black/5 dark:border-white/5 transition-transform hover:scale-[1.01]">
-        <div className="p-2.5 bg-gray-50 dark:bg-gray-700/30 rounded-lg">{icon}</div>
-        <div className="min-w-0">
+        <div className="p-2.5 bg-gray-50 dark:bg-gray-700/30 rounded-lg shrink-0">{icon}</div>
+        <div className="min-w-0 flex-1 overflow-hidden">
             <p className="text-xs font-semibold text-gray-400 truncate capitalize">{label}</p>
-            <p className={`text-lg font-bold truncate ${color}`}>{value}</p>
+            <p className={`text-base sm:text-lg font-bold ${color} whitespace-normal break-words leading-tight`}>{value}</p>
         </div>
     </div>
 );

@@ -1,0 +1,24 @@
+{
+  "name": "Mie Hair Performance",
+  "short_name": "Mie Hair",
+  "description": "Theo dõi hiệu suất nhân viên Mie Hair",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#d946ef",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://i.postimg.cc/T1hP9NLm/Zalo-2.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://i.postimg.cc/T1hP9NLm/Zalo-2.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

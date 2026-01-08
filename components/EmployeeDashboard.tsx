@@ -3,9 +3,10 @@ import { useSettings } from '../context/SettingsContext';
 import { supabase } from '../lib/supabase';
 import type { TimeEntry, DailyNote, Profile } from '../types';
 import type { Session } from '@supabase/supabase-js';
-import { ClockIcon, BriefcaseIcon, ClipboardListIcon, PlusIcon, DocumentTextIcon, DollarSignIcon, ChevronLeftIcon, CalendarIcon } from './Icons';
+import { ClockIcon, BriefcaseIcon, ClipboardListIcon, PlusIcon, DocumentTextIcon, DollarSignIcon, ChevronLeftIcon, ChevronRightIcon, CalendarIcon, UsersIcon } from './Icons';
 import { SummaryHeader } from './SummaryHeader';
 import MonthlyChart from './MonthlyChart';
+import CustomDropdown from './CustomDropdown';
 
 interface EmployeeDashboardProps {
     session: Session | null;
@@ -18,6 +19,9 @@ interface EmployeeDashboardProps {
     onManageEntries: () => void;
     onAddEntry?: () => void;
     historyStatus?: 'active' | 'recent' | 'none';
+    // New props for quick navigation
+    allEmployees?: Profile[];
+    onSwitchEmployee?: (employee: Profile) => void;
 }
 
 const calculateHours = (startISO: string, endISO: string | null) => {
@@ -29,17 +33,61 @@ const calculateHours = (startISO: string, endISO: string | null) => {
     return durationMs / (1000 * 60 * 60);
 };
 
+// Component biểu đồ Lego Pixel 24h - Cải tiến: 1 hàng 24 cột chuẩn xác
+const LegoHourChart: React.FC<{ entries: TimeEntry[], dateYMD: string }> = ({ entries, dateYMD }) => {
+    const hours = useMemo(() => {
+        const activeHours = new Array(24).fill(false);
+        entries.forEach(entry => {
+            const start = new Date(entry.start_time);
+            const end = entry.end_time ? new Date(entry.end_time) : new Date();
+            
+            // Format ngày local để so sánh chính xác với dateYMD
+            const entryStartDay = start.getFullYear() + '-' + String(start.getMonth() + 1).padStart(2, '0') + '-' + String(start.getDate()).padStart(2, '0');
+            const entryEndDay = end.getFullYear() + '-' + String(end.getMonth() + 1).padStart(2, '0') + '-' + String(end.getDate()).padStart(2, '0');
+
+            // Logic đánh dấu pixel: Nếu ca làm việc nằm trong ngày này
+            if (entryStartDay === dateYMD || entryEndDay === dateYMD) {
+                const startH = entryStartDay === dateYMD ? start.getHours() : 0;
+                const endH = entryEndDay === dateYMD ? end.getHours() : 23;
+
+                for (let i = startH; i <= endH; i++) {
+                    if (i >= 0 && i < 24) activeHours[i] = true;
+                }
+            }
+        });
+        return activeHours;
+    }, [entries, dateYMD]);
+
+    return (
+        <div className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-px w-full mt-0.5 px-0.5">
+            {hours.map((active, i) => (
+                <div 
+                    key={i} 
+                    title={`${i}h - ${i+1}h`}
+                    className={`h-1.5 rounded-[1px] transition-all duration-700 ${
+                        active 
+                        ? 'bg-gradient-to-t from-[var(--gradient-from)] to-[var(--gradient-to)] shadow-[0_0_3px_var(--breathing-glow-color)] opacity-100' 
+                        : 'bg-gray-200 dark:bg-gray-700/40 opacity-50'
+                    }`}
+                />
+            ))}
+        </div>
+    );
+};
+
 const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ 
     session, 
     profile, 
     userId, 
     targetProfile,
-    onBack,
+    onBack, 
     dataVersion, 
     onOpenNoteModal, 
     onManageEntries, 
     onAddEntry, 
-    historyStatus = 'none' 
+    historyStatus = 'none',
+    allEmployees,
+    onSwitchEmployee
 }) => {
     const [calendarDate, setCalendarDate] = useState(new Date());
     const [summaryRange, setSummaryRange] = useState<{ start: Date, end: Date }>({ 
@@ -87,30 +135,89 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         setCalendarDate(newDate);
     }, []);
 
+    // Quick Switch Logic
+    const currentEmpIndex = allEmployees && targetProfile ? allEmployees.findIndex(e => e.id === targetProfile.id) : -1;
+    const handlePrevEmp = () => {
+        if (allEmployees && onSwitchEmployee && currentEmpIndex > 0) {
+            onSwitchEmployee(allEmployees[currentEmpIndex - 1]);
+        }
+    };
+    const handleNextEmp = () => {
+        if (allEmployees && onSwitchEmployee && currentEmpIndex < allEmployees.length - 1) {
+            onSwitchEmployee(allEmployees[currentEmpIndex + 1]);
+        }
+    };
+
+    const employeeOptions = useMemo(() => {
+        if (!allEmployees) return [];
+        return allEmployees.map(e => ({
+            id: e.id,
+            label: e.full_name,
+            icon: e.avatar_url ? <img src={e.avatar_url} className="w-4 h-4 rounded-full object-cover" /> : <div className="w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-[8px] font-bold">{e.full_name?.charAt(0)}</div>
+        }));
+    }, [allEmployees]);
+
     const isAdminViewingEmployee = !!onBack;
 
     return (
         <div className="w-full animate-fadeInUp">
-            {/* Context Header for Admin View */}
+            {/* Context Header for Admin View with Quick Switcher */}
             {onBack && activeProfile && (
-                <div className="flex items-center gap-4 mb-6 animate-fadeIn">
-                    <button 
-                        onClick={onBack}
-                        className="p-2 rounded-xl bg-white dark:bg-gray-800 border border-black/5 dark:border-white/5 text-gray-500 hover:text-[var(--accent-color)] transition-all shadow-sm"
-                    >
-                        <ChevronLeftIcon size={24} />
-                    </button>
-                    <div className="flex items-center gap-3">
-                        {activeProfile.avatar_url ? (
-                            <img src={activeProfile.avatar_url} className="w-10 h-10 rounded-full object-cover border-2 border-[var(--accent-color)]" />
-                        ) : (
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--gradient-from)] to-[var(--gradient-to)] flex items-center justify-center text-white font-bold">
-                                {activeProfile.full_name?.charAt(0)}
+                <div className="flex items-center justify-between mb-6 animate-fadeIn bg-white/40 dark:bg-gray-800/20 p-2 rounded-2xl border border-black/5 dark:border-white/5 backdrop-blur-sm">
+                    <div className="flex items-center gap-3 w-full">
+                        <button 
+                            onClick={onBack}
+                            className="p-2.5 rounded-xl bg-white dark:bg-gray-800 border border-black/5 dark:border-white/5 text-gray-500 hover:text-[var(--accent-color)] transition-all shadow-sm hover:shadow-md shrink-0"
+                        >
+                            <ChevronLeftIcon size={20} />
+                        </button>
+                        
+                        <div className="flex items-center gap-3 bg-white/60 dark:bg-gray-800/60 p-1.5 rounded-xl border border-black/5 dark:border-white/5 shadow-sm flex-grow md:max-w-md">
+                            {activeProfile.avatar_url ? (
+                                <img src={activeProfile.avatar_url} className="w-9 h-9 rounded-full object-cover border-2 border-[var(--accent-color)] shadow-sm shrink-0" />
+                            ) : (
+                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[var(--gradient-from)] to-[var(--gradient-to)] flex items-center justify-center text-white font-bold shrink-0">
+                                    {activeProfile.full_name?.charAt(0)}
+                                </div>
+                            )}
+                            
+                            {allEmployees && onSwitchEmployee ? (
+                                <div className="flex-grow min-w-0">
+                                    <CustomDropdown 
+                                        options={employeeOptions}
+                                        selectedIds={[activeProfile.id]}
+                                        onToggle={(id) => {
+                                            const emp = allEmployees.find(e => e.id === id);
+                                            if (emp) onSwitchEmployee(emp);
+                                        }}
+                                        placeholder="Chọn nhân viên"
+                                        className="w-full"
+                                        align="left"
+                                    />
+                                </div>
+                            ) : (
+                                <h2 className="text-lg font-bold text-gray-800 dark:text-white leading-tight px-2">{activeProfile.full_name}</h2>
+                            )}
+                        </div>
+
+                        {allEmployees && onSwitchEmployee && (
+                            <div className="flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 p-1 rounded-xl border border-black/5 dark:border-white/5 shadow-sm shrink-0">
+                                <button 
+                                    onClick={handlePrevEmp}
+                                    disabled={currentEmpIndex <= 0}
+                                    className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    <ChevronLeftIcon size={18} />
+                                </button>
+                                <button 
+                                    onClick={handleNextEmp}
+                                    disabled={currentEmpIndex >= allEmployees.length - 1}
+                                    className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    <ChevronRightIcon size={18} />
+                                </button>
                             </div>
                         )}
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-800 dark:text-white leading-tight">{activeProfile.full_name}</h2>
-                        </div>
                     </div>
                 </div>
             )}
@@ -140,7 +247,6 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                 </div>
                 
                 <div className="flex w-full md:w-auto gap-2">
-                    {/* Hide manual Add Shift button if admin is viewing a specific employee dashboard */}
                     {!isAdminViewingEmployee && profile?.role === 'admin' && onAddEntry && (
                         <button
                             onClick={onAddEntry}
@@ -212,7 +318,7 @@ const CalendarGrid: React.FC<{ currentDate: Date; entries: TimeEntry[]; notes: D
             </div>
             <div className="grid grid-cols-7 gap-1.5">
                 {daysInMonth.map((day, index) => {
-                    if (!day) return <div key={`empty-${index}`} className="min-h-[5rem]"></div>;
+                    if (!day) return <div key={`empty-${index}`} className="min-h-[5.5rem]"></div>;
                     const dayYMD = ymdFormatter.format(day);
                     const dailyEntries = entries.filter(e => ymdFormatter.format(new Date(e.start_time)) === dayYMD);
                     const totalHours = dailyEntries.reduce((sum, entry) => sum + calculateHours(entry.start_time, entry.end_time), 0);
@@ -222,22 +328,28 @@ const CalendarGrid: React.FC<{ currentDate: Date; entries: TimeEntry[]; notes: D
                     const hasAutoEndedShift = dailyEntries.some(e => e.auto_ended);
 
                     return (
-                        <div key={dayYMD} className={`group relative min-h-[5rem] rounded-xl text-left flex flex-col transition-all duration-300 border ${isToday ? 'border-[var(--accent-color)] bg-[var(--accent-color)]/5' : 'border-black/5 dark:border-white/5 hover:border-gray-200 dark:hover:border-gray-600'} hover:shadow-sm`}>
+                        <div key={dayYMD} className={`group relative min-h-[5.5rem] rounded-xl text-left flex flex-col transition-all duration-300 border ${isToday ? 'border-[var(--accent-color)] bg-[var(--accent-color)]/5' : 'border-black/5 dark:border-white/5 hover:border-gray-200 dark:hover:border-gray-600'} hover:shadow-sm`}>
                             <div className="p-1.5 flex justify-between items-start">
-                                <span className={`font-bold text-xs ${isToday ? 'text-white bg-[var(--accent-color)] rounded-full w-5 h-5 flex items-center justify-center' : 'text-gray-400'}`}>{day.getUTCDate()}</span>
+                                <span className={`font-bold text-[10px] ${isToday ? 'text-white bg-[var(--accent-color)] rounded-full w-4 h-4 flex items-center justify-center' : 'text-gray-400'}`}>{day.getUTCDate()}</span>
                                 <button onClick={() => onOpenNoteModal(day, dayNote || null)} className="p-0.5 rounded transition-colors hover:bg-gray-100 dark:hover:bg-gray-700">
-                                    {dayNote ? <div className="relative"><DocumentTextIcon size={14} className="text-[var(--accent-color)]" /></div> : <PlusIcon size={12} className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                                    {dayNote ? <div className="relative"><DocumentTextIcon size={12} className="text-[var(--accent-color)]" /></div> : <PlusIcon size={10} className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />}
                                 </button>
                             </div>
-                            <div className="flex-grow"></div>
-                            <div className="p-1 text-center">
-                                {dailyEntries.length > 0 && (
+                            
+                            <div className="px-1 mt-0.5">
+                                <LegoHourChart entries={dailyEntries} dateYMD={dayYMD} />
+                            </div>
+
+                            <div className="p-1.5 text-center mt-auto min-h-[36px]">
+                                {dailyEntries.length > 0 ? (
                                     <div className="space-y-0.5">
-                                        <div className="text-[9px] font-bold text-amber-500 flex items-center justify-center gap-0.5">
-                                            {totalHours.toFixed(1)}h {hasAutoEndedShift && <ClockIcon size={10} className="text-gray-400" title="Có ca tự động ngắt" />}
+                                        <div className="text-[8px] font-bold text-amber-500 flex items-center justify-center gap-0.5 leading-none">
+                                            {totalHours.toFixed(1)}h {hasAutoEndedShift && <ClockIcon size={8} className="text-gray-400" />}
                                         </div>
-                                        <div className="text-[9px] font-bold text-emerald-500 truncate px-0.5">{revenue.toLocaleString('vi-VN')} đ</div>
+                                        <div className="text-[8px] font-bold text-emerald-500 truncate px-0.5 leading-none">{revenue.toLocaleString('vi-VN')} đ</div>
                                     </div>
+                                ) : (
+                                    <div className="h-4"></div>
                                 )}
                             </div>
                         </div>
@@ -268,11 +380,11 @@ const MonthlySummary: React.FC<{ entries: TimeEntry[]; }> = ({ entries }) => {
     return (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-2">
             {statCards.map((card, index) => (
-                <div key={index} className="bg-white/80 dark:bg-gray-800/40 backdrop-blur-sm rounded-xl shadow-sm p-4 flex items-center gap-3 border border-black/5 dark:border-white/5 transition-transform hover:scale-[1.01]">
-                    <div className="p-2.5 bg-gray-50 dark:bg-gray-700/30 rounded-lg flex-shrink-0">{card.icon}</div>
-                    <div className="min-w-0 flex-1 overflow-hidden">
-                        <p className="text-xs font-semibold text-gray-400 truncate capitalize">{card.label}</p>
-                        <p className={`text-base sm:text-lg font-bold ${card.valueColor} whitespace-normal break-words leading-tight`}>{card.value}</p>
+                <div key={index} className="bg-white/80 dark:bg-gray-800/40 backdrop-blur-sm rounded-xl shadow-sm p-3 md:p-4 flex items-center gap-2 md:gap-3 border border-black/5 dark:border-white/5 transition-transform hover:scale-[1.01]">
+                    <div className="p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg flex-shrink-0">{card.icon}</div>
+                    <div className="min-w-0 flex-grow">
+                        <p className="text-[10px] md:text-xs font-semibold text-gray-400 truncate capitalize">{card.label}</p>
+                        <p className={`text-sm md:text-lg font-bold break-words leading-tight ${card.valueColor}`}>{card.value}</p>
                     </div>
                 </div>
             ))}

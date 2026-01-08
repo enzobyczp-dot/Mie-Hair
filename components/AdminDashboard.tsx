@@ -81,6 +81,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenNoteModal, onMana
                 onOpenNoteModal={onOpenNoteModal}
                 onManageEntries={() => onManageEntries(selectedViewEmployee.id)}
                 onAddEntry={undefined} // Hide add entry button in admin view of employee
+                
+                // New props for quick switching
+                allEmployees={employees}
+                onSwitchEmployee={(emp) => setSelectedViewEmployee(emp)}
             />
         );
     }

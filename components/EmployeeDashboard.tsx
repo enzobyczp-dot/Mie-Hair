@@ -3,7 +3,7 @@ import { useSettings } from '../context/SettingsContext';
 import { supabase } from '../lib/supabase';
 import type { TimeEntry, DailyNote, Profile } from '../types';
 import type { Session } from '@supabase/supabase-js';
-import { ClockIcon, BriefcaseIcon, ClipboardListIcon, PlusIcon, DocumentTextIcon, DollarSignIcon, ChevronLeftIcon, ChevronRightIcon, CalendarIcon, UsersIcon } from './Icons';
+import { ClockIcon, BriefcaseIcon, ClipboardListIcon, PlusIcon, DocumentTextIcon, DollarSignIcon, ChevronLeftIcon, CalendarIcon, UsersIcon } from './Icons';
 import { SummaryHeader } from './SummaryHeader';
 import MonthlyChart from './MonthlyChart';
 import CustomDropdown from './CustomDropdown';
@@ -19,9 +19,8 @@ interface EmployeeDashboardProps {
     onManageEntries: () => void;
     onAddEntry?: () => void;
     historyStatus?: 'active' | 'recent' | 'none';
-    // New props for quick navigation
-    allEmployees?: Profile[];
-    onSwitchEmployee?: (employee: Profile) => void;
+    allEmployees?: Profile[]; // Optional: List of all employees for quick switch (admin only)
+    onSwitchProfile?: (profile: Profile) => void; // Optional: Callback to switch profile (admin only)
 }
 
 const calculateHours = (startISO: string, endISO: string | null) => {
@@ -87,7 +86,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     onAddEntry, 
     historyStatus = 'none',
     allEmployees,
-    onSwitchEmployee
+    onSwitchProfile
 }) => {
     const [calendarDate, setCalendarDate] = useState(new Date());
     const [summaryRange, setSummaryRange] = useState<{ start: Date, end: Date }>({ 
@@ -135,87 +134,59 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         setCalendarDate(newDate);
     }, []);
 
-    // Quick Switch Logic
-    const currentEmpIndex = allEmployees && targetProfile ? allEmployees.findIndex(e => e.id === targetProfile.id) : -1;
-    const handlePrevEmp = () => {
-        if (allEmployees && onSwitchEmployee && currentEmpIndex > 0) {
-            onSwitchEmployee(allEmployees[currentEmpIndex - 1]);
-        }
-    };
-    const handleNextEmp = () => {
-        if (allEmployees && onSwitchEmployee && currentEmpIndex < allEmployees.length - 1) {
-            onSwitchEmployee(allEmployees[currentEmpIndex + 1]);
-        }
-    };
+    const isAdminViewingEmployee = !!onBack;
 
-    const employeeOptions = useMemo(() => {
+    const quickSwitchOptions = useMemo(() => {
         if (!allEmployees) return [];
         return allEmployees.map(e => ({
             id: e.id,
             label: e.full_name,
-            icon: e.avatar_url ? <img src={e.avatar_url} className="w-4 h-4 rounded-full object-cover" /> : <div className="w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-[8px] font-bold">{e.full_name?.charAt(0)}</div>
+            icon: e.avatar_url ? <img src={e.avatar_url} className="w-4 h-4 rounded-full object-cover" /> : null
         }));
     }, [allEmployees]);
 
-    const isAdminViewingEmployee = !!onBack;
+    const handleSwitchEmployee = (id: string) => {
+        if (allEmployees && onSwitchProfile) {
+            const target = allEmployees.find(e => e.id === id);
+            if (target) onSwitchProfile(target);
+        }
+    };
 
     return (
         <div className="w-full animate-fadeInUp">
-            {/* Context Header for Admin View with Quick Switcher */}
+            {/* Context Header for Admin View */}
             {onBack && activeProfile && (
-                <div className="flex items-center justify-between mb-6 animate-fadeIn bg-white/40 dark:bg-gray-800/20 p-2 rounded-2xl border border-black/5 dark:border-white/5 backdrop-blur-sm">
-                    <div className="flex items-center gap-3 w-full">
-                        <button 
-                            onClick={onBack}
-                            className="p-2.5 rounded-xl bg-white dark:bg-gray-800 border border-black/5 dark:border-white/5 text-gray-500 hover:text-[var(--accent-color)] transition-all shadow-sm hover:shadow-md shrink-0"
-                        >
-                            <ChevronLeftIcon size={20} />
-                        </button>
+                <div className="flex items-center gap-4 mb-6 animate-fadeIn">
+                    <button 
+                        onClick={onBack}
+                        className="p-2 rounded-xl bg-white dark:bg-gray-800 border border-black/5 dark:border-white/5 text-gray-500 hover:text-[var(--accent-color)] transition-all shadow-sm flex-shrink-0"
+                    >
+                        <ChevronLeftIcon size={24} />
+                    </button>
+                    
+                    <div className="flex items-center gap-3 w-full max-w-sm">
+                        {activeProfile.avatar_url ? (
+                            <img src={activeProfile.avatar_url} className="w-10 h-10 rounded-full object-cover border-2 border-[var(--accent-color)] flex-shrink-0" />
+                        ) : (
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--gradient-from)] to-[var(--gradient-to)] flex items-center justify-center text-white font-bold flex-shrink-0">
+                                {activeProfile.full_name?.charAt(0)}
+                            </div>
+                        )}
                         
-                        <div className="flex items-center gap-3 bg-white/60 dark:bg-gray-800/60 p-1.5 rounded-xl border border-black/5 dark:border-white/5 shadow-sm flex-grow md:max-w-md">
-                            {activeProfile.avatar_url ? (
-                                <img src={activeProfile.avatar_url} className="w-9 h-9 rounded-full object-cover border-2 border-[var(--accent-color)] shadow-sm shrink-0" />
-                            ) : (
-                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[var(--gradient-from)] to-[var(--gradient-to)] flex items-center justify-center text-white font-bold shrink-0">
-                                    {activeProfile.full_name?.charAt(0)}
-                                </div>
-                            )}
-                            
-                            {allEmployees && onSwitchEmployee ? (
-                                <div className="flex-grow min-w-0">
-                                    <CustomDropdown 
-                                        options={employeeOptions}
-                                        selectedIds={[activeProfile.id]}
-                                        onToggle={(id) => {
-                                            const emp = allEmployees.find(e => e.id === id);
-                                            if (emp) onSwitchEmployee(emp);
-                                        }}
-                                        placeholder="Chọn nhân viên"
-                                        className="w-full"
-                                        align="left"
-                                    />
-                                </div>
-                            ) : (
-                                <h2 className="text-lg font-bold text-gray-800 dark:text-white leading-tight px-2">{activeProfile.full_name}</h2>
-                            )}
-                        </div>
-
-                        {allEmployees && onSwitchEmployee && (
-                            <div className="flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 p-1 rounded-xl border border-black/5 dark:border-white/5 shadow-sm shrink-0">
-                                <button 
-                                    onClick={handlePrevEmp}
-                                    disabled={currentEmpIndex <= 0}
-                                    className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                >
-                                    <ChevronLeftIcon size={18} />
-                                </button>
-                                <button 
-                                    onClick={handleNextEmp}
-                                    disabled={currentEmpIndex >= allEmployees.length - 1}
-                                    className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                >
-                                    <ChevronRightIcon size={18} />
-                                </button>
+                        {allEmployees && onSwitchProfile ? (
+                            <div className="flex-grow">
+                                <CustomDropdown 
+                                    options={quickSwitchOptions}
+                                    selectedIds={[activeProfile.id]}
+                                    onToggle={handleSwitchEmployee}
+                                    placeholder={activeProfile.full_name}
+                                    className="w-full min-w-[200px]"
+                                    icon={<UsersIcon size={12} className="text-[var(--accent-color)]" />}
+                                />
+                            </div>
+                        ) : (
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-800 dark:text-white leading-tight">{activeProfile.full_name}</h2>
                             </div>
                         )}
                     </div>
